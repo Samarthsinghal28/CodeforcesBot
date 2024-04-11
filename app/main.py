@@ -15,20 +15,53 @@ PROBLEM_LINK = 'https://codeforces.com/problemset/problem/'
 PROBLEM_SET_LINK = 'https://codeforces.com/api/problemset.problems'
 
 
-
-
-
-
-
-
 @app.route('/getquestion', methods=['GET'])
-def home():
-    problem_id = flask.request.args['id']
-    problem_code = flask.request.args['problem']
-    print(f'{PROBLEM_LINK}{problem_id}/{problem_code}')
-    problem = codeforces_wrapper.parse_problem(f'{PROBLEM_LINK}{problem_id}/{problem_code} ')
-    return flask.jsonify(problem)
+def getquestion():
 
+    number = int(flask.request.args["mobile"])
+    try:
+        client = MongoClient(MONGO_DB_URL)
+        db = client.get_database("Problems")
+        collection_users = db.Users
+        collection_problems = db.Problems
+
+        # print(number)
+        present = collection_users.find_one({"mobile_number":number})
+        # print("found user ",present)
+        questions_attempted = present["questions_attempted"]
+        difficulty = present["difficulty"]
+
+        if(len(questions_attempted)!=0):
+            query = {"difficulty":difficulty,"problem_id":{"$nin" :questions_attempted}}
+        else:
+            query = {"difficulty":difficulty}
+        question = collection_problems.find_one(query)
+        problem_id = question["problem_id"]
+
+        contest_id = int(problem_id[:-1])
+        problem_code = problem_id[-1]
+
+        # print(f'{PROBLEM_LINK}{contest_id}/{problem_code}')
+        problem = codeforces_wrapper.parse_problem(f'{PROBLEM_LINK}{contest_id}/{problem_code} ')
+
+        questions_attempted.append(problem_id)
+        document_id = present["_id"]
+        query = {'_id':document_id}
+        update = {'$set':{'questions_attempted':questions_attempted}}
+        collection_users.update_one(query, update)
+
+
+        return flask.jsonify(problem)
+
+    except ConnectionFailure as e:
+        print("Failed to connect to MongoDB:", e)
+        error = {"message":str(e)}
+        return flask.jsonify(error)
+    except Exception as e:
+        print("An error occurred:", e)
+        error = {"message":str(e)}
+        return flask.jsonify(error)
+    
 
 @app.route('/getproblemset',methods=['GET'])
 def problems():
